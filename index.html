@@ -57,12 +57,6 @@
             outline: none;
             box-shadow: 0 0 3px #444444;
         }
-        .vertical-line {
-            width: 1px;
-            height: 36px;
-            background-color: white;
-            margin: 0 10px;
-        }
         .radius-wrapper {
             display: flex;
             align-items: center;
@@ -128,10 +122,15 @@
             color: white;
             background-color: black;
             border: 1px solid white;
-            padding: 8px 16px;
-            font-size: 14px;
+            padding: 10px 16px; /* Increased padding for two-line text */
+            font-size: 13px; /* Slightly reduced font size */
+            line-height: 1.2; /* Adjusted line height */
             cursor: pointer;
             flex: 1;
+            text-align: center; /* Center text horizontally */
+            display: flex; /* Use flexbox to center vertically */
+            flex-direction: column; /* Stack words vertically */
+            justify-content: center; /* Center vertically */
         }
         .controls button:hover {
             background-color: #333333;
@@ -153,7 +152,6 @@
                         </script>
                     </select>
                 </div>
-                <div class="vertical-line"></div>
                 <div class="radius-wrapper">
                     <div class="radius">Radius: 10m coverage</div>
                 </div>
@@ -161,8 +159,9 @@
             <hr>
         </div>
         <div class="controls">
-            <button onclick="startTracking()">Start Tracking</button>
-            <button onclick="stopTracking()">Stop Tracking</button>
+            <button onclick="startTracking()">Start<br>Tracking</button>
+            <button onclick="stopTracking()">Stop<br>Tracking</button>
+            <button onclick="clearData()">Clear<br>Data</button>
         </div>
         <div class="tabs">
             <button class="tab-button active" onclick="switchTab('locationTab')">Location</button>
@@ -206,8 +205,8 @@
             localStorage.setItem('minTimeSeconds', minTimeSeconds);
             if (!trackingInterval) {
                 logHistory('Start Tracking clicked', new Date().toLocaleString());
-                logHistory('Location ON', new Date().toLocaleString());
-                trackingInterval = setInterval(checkLocation, 10000);
+                trackingInterval = setInterval(checkLocation, 5000);
+                checkLocation();
             }
             initializeMap();
         }
@@ -220,12 +219,29 @@
                 clearInterval(trackingInterval);
                 trackingInterval = null;
                 logHistory('Stop Tracking clicked', new Date().toLocaleString());
-                logHistory('Location OFF', new Date().toLocaleString());
                 stationaryTime = 0;
                 startTime = null;
                 lastPosition = null;
                 updateLocationDisplay(null);
             }
+        }
+
+        function clearData() {
+            localStorage.removeItem('locations');
+            localStorage.removeItem('locationHistory');
+            locations = [];
+            history = [];
+            if (map) {
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                if (currentCircle) {
+                    map.removeLayer(currentCircle);
+                    currentCircle = null;
+                }
+            }
+            updateLocationDisplay(null);
+            updateNetworkDisplay();
+            logHistory('Clear Data clicked', new Date().toLocaleString());
         }
 
         function initializeMap() {
@@ -250,18 +266,16 @@
                 if (lastPosition) {
                     const distance = calculateDistance(lastPosition, currentPosition);
                     if (distance < 10) {
-                        stationaryTime += 10; // Increment duration if within 10m
+                        stationaryTime += 10;
                     } else {
-                        // Moved outside 10m radius
                         if (stationaryTime >= minTimeSeconds) {
-                            saveLocation(lastPosition, stationaryTime); // Save if minimum time met
+                            saveLocation(lastPosition, stationaryTime);
                         }
-                        stationaryTime = 0; // Reset duration
-                        startTime = new Date(); // Reset start time
-                        lastPosition = currentPosition; // Update position
+                        stationaryTime = 0;
+                        startTime = new Date();
+                        lastPosition = currentPosition;
                     }
                 } else {
-                    // First position
                     lastPosition = currentPosition;
                     startTime = new Date();
                 }
@@ -270,17 +284,15 @@
                 updateMap();
             }, error => {
                 console.error('Geolocation error:', error);
-                logHistory('Geolocation Error', new Date().toLocaleString()); // Debug log
-                // Save location if minimum time is met before resetting state
+                logHistory('Geolocation Error', new Date().toLocaleString());
                 if (stationaryTime >= minTimeSeconds && lastPosition) {
                     saveLocation(lastPosition, stationaryTime);
                 }
-                // Reset state after saving
                 stationaryTime = 0;
                 startTime = null;
                 lastPosition = null;
                 updateLocationDisplay(null);
-            });
+            }, { timeout: 5000 });
         }
 
         function updateMap() {
@@ -318,14 +330,14 @@
                 duration: (duration / 60).toFixed(1),
                 startTime: startTime.toLocaleString()
             };
-            locations.unshift(location); // Latest location on top
+            locations.unshift(location);
             localStorage.setItem('locations', JSON.stringify(locations));
             if (map) {
                 const marker = L.marker([location.lat, location.lng]).addTo(map)
                     .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}, Duration: ${location.duration} min, Start: ${location.startTime}, End: ${location.timestamp}`);
                 markers.push(marker);
             }
-            updateLocationDisplay(lastPosition); // Update display with current position
+            updateLocationDisplay(lastPosition);
         }
 
         function updateLocationDisplay(position) {
@@ -354,7 +366,6 @@
         function updateNetworkDisplay() {
             const networkTab = document.getElementById('networkTab');
             networkTab.innerHTML = '';
-            // Display in reverse chronological order (latest on top)
             history.slice().reverse().forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'network-item';
@@ -382,7 +393,6 @@
         updateLocationDisplay(null);
         updateNetworkDisplay();
 
-        // Save location on page unload if minimum time is met
         window.addEventListener('unload', () => {
             if (trackingInterval && stationaryTime >= minTimeSeconds && lastPosition) {
                 saveLocation(lastPosition, stationaryTime);
