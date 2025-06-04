@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Location Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      background-color: black;
+      color: white;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 100%;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .header label, .header input {
+      color: white;
+      background-color: black;
+      border: 1px solid white;
+      padding: 8px;
+      font-size: 14px;
+    }
+    .header input {
+      width: 60px;
+      margin-left: 5px;
+    }
+    .header input:focus {
+      outline: none;
+      border-color: #444444;
+      box-shadow: 0 0 5px #444444;
+    }
+    .header .radius {
+      font-size: 14px;
+      text-align: right;
+    }
+    hr {
+      border: 1px solid white;
+      margin: 10px 0;
+    }
+    .tabs {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .tab-button {
+      color: white;
+      background-color: black;
+      border: 1px solid white;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      flex: 1;
+      text-align: center;
+    }
+    .tab-button.active {
+      background-color: white;
+      color: black;
+    }
+    .tab-button:hover {
+      background-color: #333333;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    #currentLocations .location-box {
+      border: 1px solid white;
+      padding: 10px;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    #historyList .history-item {
+      border: 1px solid white;
+      padding: 10px;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    #map {
+      height: 300px;
+      border: 1px solid white;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .controls button {
+      color: white;
+      background-color: black;
+      border: 1px solid white;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      flex: 1;
+    }
+    .controls button:hover {
+      background-color: #333333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <label for="minTime">Minimum Minutes:</label>
+        <input type="number" id="minTime" min="1" value="1">
+      </div>
+      <div class="radius">Radius: 10m coverage</div>
+    </div>
+    <hr>
+    <div class="controls">
+      <button onclick="startTracking()">Start Tracking</button>
+      <button onclick="stopTracking()">Stop Tracking</button>
+    </div>
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchTab('currentLocations')">Current</button>
+      <button class="tab-button" onclick="switchTab('historyList')">History</button>
+      <button class="tab-button" onclick="switchTab('map')">Map</button>
+    </div>
+    <div id="currentLocations" class="tab-content active"></div>
+    <div id="historyList" class="tab-content"></div>
+    <div id="map" class="tab-content"></div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let lastPosition = null;
+    let stationaryTime = 0;
+    let startTime = null;
+    let locations = JSON.parse(localStorage.getItem('locations')) || [];
+    let history = JSON.parse(localStorage.getItem('locationHistory')) || [];
+    let minTimeSeconds = localStorage.getItem('minTimeSeconds') || 60; // Default 1 minute
+    let trackingInterval = null;
+    let map = null;
+    let currentCircle = null;
+    let markers = [];
+
+    // Load saved time preference
+    document.getElementById('minTime').value = minTimeSeconds / 60;
+
+    function startTracking() {
+      const minTime = parseInt(document.getElementById('minTime').value);
+      if (isNaN(minTime) || minTime < 1) {
+        alert('Please enter a valid number of minutes (1 or greater)');
+        return;
+      }
+      if (!navigator.geolocation) {
+        alert('Geolocation not supported');
+        return;
+      }
+      minTimeSeconds = minTime * 60;
+      localStorage.setItem('minTimeSeconds', minTimeSeconds);
+      if (!trackingInterval) {
+        trackingInterval = setInterval(checkLocation, 10000);
+        logHistory('Location ON', new Date().toLocaleString());
+      }
+      initializeMap();
+    }
+
+    function stopTracking() {
+      if (trackingInterval) {
+        clearInterval(trackingInterval);
+        trackingInterval = null;
+        logHistory('Location OFF', new Date().toLocaleString());
+      }
+    }
+
+    function initializeMap() {
+      if (!map) {
+        map = L.map('map').setView([0, 0], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap'
+        }).addTo(map);
+        // Load saved locations as markers
+        locations.forEach(loc => {
+          const marker = L.marker([loc.lat, loc.lng]).addTo(map)
+            .bindPopup(`Lat: ${loc.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`);
+          markers.push(marker);
+        });
+      }
+    }
+
+    function checkLocation() {
+      navigator.geolocation.getCurrentPosition(position => {
+        const { latitude, longitude } = position.coords;
+        const currentPosition = { lat: latitude, lng: longitude };
+
+        // Update current position display
+        updateCurrentDisplay(currentPosition);
+
+        if (lastPosition) {
+          const distance = calculateDistance(lastPosition, currentPosition);
+          if (distance < 10) {
+            stationaryTime += 10;
+            if (stationaryTime >= minTimeSeconds) {
+              saveLocation(currentPosition);
+              stationaryTime = 0;
+              startTime = new Date();
+            }
+          } else {
+            stationaryTime = 0;
+            lastPosition = currentPosition;
+            startTime = new Date();
+          }
+        } else {
+          lastPosition = currentPosition;
+          startTime = new Date();
+        }
+        lastPosition = currentPosition;
+
+        // Update map if active
+        if (map && document.getElementById('map').classList.contains('active')) {
+          map.setView([latitude, longitude], 15);
+          if (currentCircle) map.removeLayer(currentCircle);
+          currentCircle = L.circle([lastPosition.lat, lastPosition.lng], {
+            radius: 10,
+            color: 'blue',
+            fillOpacity: 0.1
+          }).addTo(map);
+        }
+      }, error => {
+        console.error('Geolocation error:', error);
+        updateCurrentDisplay(null);
+      });
+    }
+
+    function calculateDistance(pos1, pos2) {
+      const R = 6371e3;
+      const φ1 = pos1.lat * Math.PI / 180;
+      const φ2 = pos2.lat * Math.PI / 180;
+      const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
+      const Δλ = (pos2.lng - pos1.lng) * Math.PI / 180;
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function saveLocation(position) {
+      const location = {
+        lat: position.lat,
+        lng: position.lng,
+        timestamp: new Date().toLocaleString(),
+        duration: (stationaryTime / 60).toFixed(1),
+        startTime: startTime.toLocaleString()
+      };
+      locations.unshift(location); // Add to start of array
+      localStorage.setItem('locations', JSON.stringify(locations));
+      updateCurrentDisplay(position);
+      if (map) {
+        const marker = L.marker([location.lat, location.lng]).addTo(map)
+          .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}, Duration: ${location.duration} min, Start: ${location.startTime}, End: ${location.timestamp}`);
+        markers.push(marker);
+      }
+    }
+
+    function updateCurrentDisplay(position) {
+      const currentLocations = document.getElementById('currentLocations');
+      currentLocations.innerHTML = '';
+      // Current position box
+      const currentBox = document.createElement('div');
+      currentBox.className = 'location-box';
+      currentBox.textContent = position 
+        ? `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}, Duration: ${(stationaryTime / 60).toFixed(1)} min, Start Time: ${startTime ? startTime.toLocaleString() : 'N/A'}, End Time: N/A`
+        : 'Current Position: Error retrieving location';
+      currentLocations.appendChild(currentBox);
+      // Saved locations
+      locations.forEach(loc => {
+        const box = document.createElement('div');
+        box.className = 'location-box';
+        box.textContent = `Lat: ${loc.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start Time: ${loc.startTime}, End Time: ${loc.timestamp}`;
+        currentLocations.appendChild(box);
+      });
+    }
+
+    function logHistory(status, timestamp) {
+      history.push({ status, timestamp });
+      localStorage.setItem('locationHistory', JSON.stringify(history));
+      updateHistoryDisplay();
+    }
+
+    function updateHistoryDisplay() {
+      const historyList = document.getElementById('historyList');
+      historyList.innerHTML = '';
+      history.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.textContent = `${item.status} at ${item.timestamp}`;
+        historyList.appendChild(div);
+      });
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
+      if (tabId === 'map' && map) {
+        map.invalidateSize();
+        if (lastPosition) {
+          map.setView([lastPosition.lat, lastPosition.lng], 15);
+          if (currentCircle) map.removeLayer(currentCircle);
+          currentCircle = L.circle([lastPosition.lat, lastPosition.lng], {
+            radius: 10,
+            color: 'blue',
+            fillOpacity: 0.1
+          }).addTo(map);
+        }
+      }
+    }
+
+    // Initialize displays
+    updateCurrentDisplay(null);
+    updateHistoryDisplay();
+
+    // Log OFF on page unload
+    window.addEventListener('unload', () => {
+      if (trackingInterval) {
+        logHistory('Location OFF', new Date().toLocaleString());
+      }
+    });
+  </script>
+</body>
+</html>
