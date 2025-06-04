@@ -206,8 +206,8 @@
             localStorage.setItem('minTimeSeconds', minTimeSeconds);
             if (!trackingInterval) {
                 logHistory('Start Tracking clicked', new Date().toLocaleString());
-                trackingInterval = setInterval(checkLocation, 10000);
                 logHistory('Location ON', new Date().toLocaleString());
+                trackingInterval = setInterval(checkLocation, 10000);
             }
             initializeMap();
         }
@@ -223,6 +223,7 @@
                 logHistory('Location OFF', new Date().toLocaleString());
                 stationaryTime = 0;
                 startTime = null;
+                lastPosition = null;
                 updateLocationDisplay(null);
             }
         }
@@ -249,16 +250,18 @@
                 if (lastPosition) {
                     const distance = calculateDistance(lastPosition, currentPosition);
                     if (distance < 10) {
-                        stationaryTime += 10;
+                        stationaryTime += 10; // Increment duration if within 10m
                     } else {
+                        // Moved outside 10m radius
                         if (stationaryTime >= minTimeSeconds) {
-                            saveLocation(lastPosition, stationaryTime);
+                            saveLocation(lastPosition, stationaryTime); // Save if minimum time met
                         }
-                        stationaryTime = 0;
-                        startTime = new Date();
-                        lastPosition = currentPosition;
+                        stationaryTime = 0; // Reset duration
+                        startTime = new Date(); // Reset start time
+                        lastPosition = currentPosition; // Update position
                     }
                 } else {
+                    // First position
                     lastPosition = currentPosition;
                     startTime = new Date();
                 }
@@ -267,10 +270,12 @@
                 updateMap();
             }, error => {
                 console.error('Geolocation error:', error);
-                // Save location if minimum time is met before showing error
+                logHistory('Geolocation Error', new Date().toLocaleString()); // Debug log
+                // Save location if minimum time is met before resetting state
                 if (stationaryTime >= minTimeSeconds && lastPosition) {
                     saveLocation(lastPosition, stationaryTime);
                 }
+                // Reset state after saving
                 stationaryTime = 0;
                 startTime = null;
                 lastPosition = null;
@@ -313,14 +318,14 @@
                 duration: (duration / 60).toFixed(1),
                 startTime: startTime.toLocaleString()
             };
-            locations.unshift(location);
+            locations.unshift(location); // Latest location on top
             localStorage.setItem('locations', JSON.stringify(locations));
             if (map) {
                 const marker = L.marker([location.lat, location.lng]).addTo(map)
-                    .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`);
+                    .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}, Duration: ${location.duration} min, Start: ${location.startTime}, End: ${location.timestamp}`);
                 markers.push(marker);
             }
-            updateLocationDisplay(null);
+            updateLocationDisplay(lastPosition); // Update display with current position
         }
 
         function updateLocationDisplay(position) {
@@ -377,13 +382,10 @@
         updateLocationDisplay(null);
         updateNetworkDisplay();
 
-        // Log OFF on page unload
+        // Save location on page unload if minimum time is met
         window.addEventListener('unload', () => {
             if (trackingInterval && stationaryTime >= minTimeSeconds && lastPosition) {
                 saveLocation(lastPosition, stationaryTime);
-            }
-            if (trackingInterval) {
-                logHistory('Location OFF', new Date().toLocaleString());
             }
         });
     </script>
