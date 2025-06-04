@@ -19,11 +19,20 @@
             width: 100%;
             max-width: 100%;
         }
+        .header-container {
+            position: relative;
+            width: 100%;
+        }
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 0;
+            width: 100%;
+        }
+        .min-time {
+            display: flex;
+            align-items: center;
         }
         .header label {
             color: white;
@@ -36,7 +45,7 @@
             background-color: black;
             padding: 6px;
             font-size: 12px;
-            width: 55px; /* Slightly wider for picker */
+            width: 45px;
             margin-left: 5px;
             -webkit-appearance: none;
             -moz-appearance: none;
@@ -48,13 +57,23 @@
             outline: none;
             box-shadow: 0 0 3px #444444;
         }
+        .vertical-line {
+            width: 1px;
+            height: 36px;
+            background-color: white;
+            margin: 0 10px;
+        }
+        .radius-wrapper {
+            display: flex;
+            align-items: center;
+        }
         .header .radius {
             font-size: 14px;
             text-align: right;
         }
         hr {
             border: 1px solid white;
-            margin: 10px 0;
+            margin: 0 0 10px 0;
         }
         .tabs {
             display: flex;
@@ -84,13 +103,13 @@
         .tab-content.active {
             display: block;
         }
-        #currentLocations .location-box {
+        #locationTab .location-box {
             border: 1px solid white;
             padding: 10px;
             font-size: 14px;
             margin-bottom: 10px;
         }
-        #historyList .history-item {
+        #networkTab .network-item {
             border: 1px solid white;
             padding: 10px;
             font-size: 14px;
@@ -121,32 +140,37 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <div>
-                <label for="minTime">Minimum Minutes:</label>
-                <select id="minTime">
-                    <!-- Populate options 1 to 60 -->
-                    <script>
-                        for (let i = 1; i <= 60; i++) {
-                            document.write(`<option value="${i}"${i === 1 ? ' selected' : ''}>${i}</option>`);
-                        }
-                    </script>
-                </select>
+        <div class="header-container">
+            <div class="header">
+                <div class="min-time">
+                    <label for="minTime">Minimum Minutes:</label>
+                    <select id="minTime">
+                        <!-- Populate options 1 to 60 -->
+                        <script>
+                            for (let i = 1; i <= 60; i++) {
+                                document.write(`<option value="${i}"${i === 1 ? ' selected' : ''}>${i}</option>`);
+                            }
+                        </script>
+                    </select>
+                </div>
+                <div class="vertical-line"></div>
+                <div class="radius-wrapper">
+                    <div class="radius">Radius: 10m coverage</div>
+                </div>
             </div>
-            <div class="radius">Radius: 10m coverage</div>
+            <hr>
         </div>
-        <hr>
         <div class="controls">
             <button onclick="startTracking()">Start Tracking</button>
             <button onclick="stopTracking()">Stop Tracking</button>
         </div>
         <div class="tabs">
-            <button class="tab-button active" onclick="switchTab('currentLocations')">Current</button>
-            <button class="tab-button" onclick="switchTab('historyList')">History</button>
+            <button class="tab-button active" onclick="switchTab('locationTab')">Location</button>
+            <button class="tab-button" onclick="switchTab('networkTab')">Network</button>
             <button class="tab-button" onclick="switchTab('map')">Map</button>
         </div>
-        <div id="currentLocations" class="tab-content active"></div>
-        <div id="historyList" class="tab-content"></div>
+        <div id="locationTab" class="tab-content active"></div>
+        <div id="networkTab" class="tab-content"></div>
         <div id="map" class="tab-content"></div>
     </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -181,6 +205,7 @@
             minTimeSeconds = minTime * 60;
             localStorage.setItem('minTimeSeconds', minTimeSeconds);
             if (!trackingInterval) {
+                logHistory('Start Tracking clicked', new Date().toLocaleString());
                 trackingInterval = setInterval(checkLocation, 10000);
                 logHistory('Location ON', new Date().toLocaleString());
             }
@@ -194,10 +219,11 @@
                 }
                 clearInterval(trackingInterval);
                 trackingInterval = null;
+                logHistory('Stop Tracking clicked', new Date().toLocaleString());
                 logHistory('Location OFF', new Date().toLocaleString());
                 stationaryTime = 0;
                 startTime = null;
-                updateCurrentDisplay(null);
+                updateLocationDisplay(null);
             }
         }
 
@@ -237,10 +263,25 @@
                     startTime = new Date();
                 }
 
-                updateCurrentDisplay(currentPosition);
+                updateLocationDisplay(currentPosition);
+                updateMap();
+            }, error => {
+                console.error('Geolocation error:', error);
+                // Save location if minimum time is met before showing error
+                if (stationaryTime >= minTimeSeconds && lastPosition) {
+                    saveLocation(lastPosition, stationaryTime);
+                }
+                stationaryTime = 0;
+                startTime = null;
+                lastPosition = null;
+                updateLocationDisplay(null);
+            });
+        }
 
-                if (map && document.getElementById('map').classList.contains('active')) {
-                    map.setView([latitude, longitude], 15);
+        function updateMap() {
+            if (map && document.getElementById('map').classList.contains('active')) {
+                if (lastPosition) {
+                    map.setView([lastPosition.lat, lastPosition.lng], 15);
                     if (currentCircle) map.removeLayer(currentCircle);
                     currentCircle = L.circle([lastPosition.lat, lastPosition.lng], {
                         radius: 10,
@@ -248,10 +289,7 @@
                         fillOpacity: 0.1
                     }).addTo(map);
                 }
-            }, error => {
-                console.error('Geolocation error:', error);
-                updateCurrentDisplay(null);
-            });
+            }
         }
 
         function calculateDistance(pos1, pos2) {
@@ -279,42 +317,44 @@
             localStorage.setItem('locations', JSON.stringify(locations));
             if (map) {
                 const marker = L.marker([location.lat, location.lng]).addTo(map)
-                    .bindPopup(`Lat: ${loc.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`);
+                    .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`);
                 markers.push(marker);
             }
+            updateLocationDisplay(null);
         }
 
-        function updateCurrentDisplay(position) {
-            const currentLocations = document.getElementById('currentLocations');
-            currentLocations.innerHTML = '';
+        function updateLocationDisplay(position) {
+            const locationTab = document.getElementById('locationTab');
+            locationTab.innerHTML = '';
             const currentBox = document.createElement('div');
             currentBox.className = 'location-box';
             currentBox.textContent = position 
                 ? `Lat: ${position.lat.toFixed(6)}, Lng: ${position.lng.toFixed(6)}, Duration: ${(stationaryTime / 60).toFixed(1)} min, Start: ${startTime ? startTime.toLocaleString() : 'N/A'}, End Time: N/A`
                 : 'Current Position: Error retrieving location';
-            currentLocations.appendChild(currentBox);
+            locationTab.appendChild(currentBox);
             locations.forEach(loc => {
                 const box = document.createElement('div');
                 box.className = 'location-box';
                 box.textContent = `Lat: ${loc.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`;
-                currentLocations.appendChild(box);
+                locationTab.appendChild(box);
             });
         }
 
         function logHistory(status, timestamp) {
             history.push({ status, timestamp });
             localStorage.setItem('locationHistory', JSON.stringify(history));
-            updateHistoryDisplay();
+            updateNetworkDisplay();
         }
 
-        function updateHistoryDisplay() {
-            const historyList = document.getElementById('historyList');
-            historyList.innerHTML = '';
-            history.forEach(item => {
+        function updateNetworkDisplay() {
+            const networkTab = document.getElementById('networkTab');
+            networkTab.innerHTML = '';
+            // Display in reverse chronological order (latest on top)
+            history.slice().reverse().forEach(item => {
                 const div = document.createElement('div');
-                div.className = 'history-item';
+                div.className = 'network-item';
                 div.textContent = `${item.status} at ${item.timestamp}`;
-                historyList.appendChild(div);
+                networkTab.appendChild(div);
             });
         }
 
@@ -329,21 +369,13 @@
             document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
             if (tabId === 'map' && map) {
                 map.invalidateSize();
-                if (lastPosition) {
-                    map.setView([lastPosition.lat, lastPosition.lng], 15);
-                    if (currentCircle) map.removeLayer(currentCircle);
-                    currentCircle = L.circle([lastPosition.lat, lastPosition.lng], {
-                        radius: 10,
-                        color: 'blue',
-                        fillOpacity: 0.1
-                    }).addTo(map);
-                }
+                updateMap();
             }
         }
 
         // Initialize displays
-        updateCurrentDisplay(null);
-        updateHistoryDisplay();
+        updateLocationDisplay(null);
+        updateNetworkDisplay();
 
         // Log OFF on page unload
         window.addEventListener('unload', () => {
