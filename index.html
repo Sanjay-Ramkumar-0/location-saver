@@ -31,15 +31,20 @@
             padding: 8px;
             font-size: 14px;
         }
-        .header input {
+        .header select {
             color: white;
             background-color: black;
             padding: 6px;
             font-size: 12px;
-            width: 45px;
+            width: 55px; /* Slightly wider for picker */
             margin-left: 5px;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            border: none;
+            cursor: pointer;
         }
-        .header input:focus {
+        .header select:focus {
             outline: none;
             box-shadow: 0 0 3px #444444;
         }
@@ -119,7 +124,14 @@
         <div class="header">
             <div>
                 <label for="minTime">Minimum Minutes:</label>
-                <input type="number" id="minTime" min="1" value="1">
+                <select id="minTime">
+                    <!-- Populate options 1 to 60 -->
+                    <script>
+                        for (let i = 1; i <= 60; i++) {
+                            document.write(`<option value="${i}"${i === 1 ? ' selected' : ''}>${i}</option>`);
+                        }
+                    </script>
+                </select>
             </div>
             <div class="radius">Radius: 10m coverage</div>
         </div>
@@ -151,7 +163,10 @@
         let markers = [];
 
         // Load saved time preference
-        document.getElementById('minTime').value = minTimeSeconds / 60;
+        const savedMinTime = minTimeSeconds / 60;
+        if (savedMinTime >= 1 && savedMinTime <= 60) {
+            document.getElementById('minTime').value = savedMinTime;
+        }
 
         function startTracking() {
             const minTime = parseInt(document.getElementById('minTime').value);
@@ -264,8 +279,8 @@
             localStorage.setItem('locations', JSON.stringify(locations));
             if (map) {
                 const marker = L.marker([location.lat, location.lng]).addTo(map)
-                    .bindPopup(`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}, Duration: ${location.duration} min, Start: ${location.startTime}, End: ${location.timestamp}`);
-                    markers.push(marker);
+                    .bindPopup(`Lat: ${loc.lat.toFixed(6)}, Lng: ${loc.lng.toFixed(6)}, Duration: ${loc.duration} min, Start: ${loc.startTime}, End: ${loc.timestamp}`);
+                markers.push(marker);
             }
         }
 
