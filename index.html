@@ -122,15 +122,15 @@
             color: white;
             background-color: black;
             border: 1px solid white;
-            padding: 10px 16px; /* Increased padding for two-line text */
-            font-size: 13px; /* Slightly reduced font size */
-            line-height: 1.2; /* Adjusted line height */
+            padding: 10px 16px;
+            font-size: 13px;
+            line-height: 1.2;
             cursor: pointer;
             flex: 1;
-            text-align: center; /* Center text horizontally */
-            display: flex; /* Use flexbox to center vertically */
-            flex-direction: column; /* Stack words vertically */
-            justify-content: center; /* Center vertically */
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         .controls button:hover {
             background-color: #333333;
@@ -205,8 +205,10 @@
             localStorage.setItem('minTimeSeconds', minTimeSeconds);
             if (!trackingInterval) {
                 logHistory('Start Tracking clicked', new Date().toLocaleString());
-                trackingInterval = setInterval(checkLocation, 5000);
+                trackingInterval = setInterval(checkLocation, 10000); // Changed to 10 seconds
                 checkLocation();
+                // Change button text to "Tracking..."
+                document.querySelector('button[onclick="startTracking()"]').innerHTML = 'Tracking…';
             }
             initializeMap();
         }
@@ -223,6 +225,8 @@
                 startTime = null;
                 lastPosition = null;
                 updateLocationDisplay(null);
+                // Revert button text to "Start<br>Tracking"
+                document.querySelector('button[onclick="startTracking()"]').innerHTML = 'Start<br>Tracking';
             }
         }
 
@@ -266,7 +270,7 @@
                 if (lastPosition) {
                     const distance = calculateDistance(lastPosition, currentPosition);
                     if (distance < 10) {
-                        stationaryTime += 10;
+                        stationaryTime += 10; // Increment by 10 seconds to match polling interval
                     } else {
                         if (stationaryTime >= minTimeSeconds) {
                             saveLocation(lastPosition, stationaryTime);
@@ -292,7 +296,7 @@
                 startTime = null;
                 lastPosition = null;
                 updateLocationDisplay(null);
-            }, { timeout: 5000 });
+            }, { timeout: 10000 }); // Changed timeout to 10 seconds
         }
 
         function updateMap() {
